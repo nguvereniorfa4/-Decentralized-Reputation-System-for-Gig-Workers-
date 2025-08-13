@@ -69,9 +69,10 @@
       (gig-id (+ (var-get last-gig-id) u1))
       (client tx-sender)
     )
-    (asserts! (and (>= score u1) (<= score u5)) err-invalid-skill-score)
+    (asserts! (and (>= score u1) (<= score u5)) err-invalid-score)
     (asserts! (is-some (get-worker-profile worker)) err-not-found)
     (try! (update-worker-stats worker score))
+    (try! (check-and-award-badges worker))
     (var-set last-gig-id gig-id)
     (ok (map-set gig-reviews
       { gig-id: gig-id }
@@ -308,10 +309,9 @@
       (review-id (+ (var-get skill-review-counter) u1))
       (client tx-sender)
     )
-    (asserts! (and (>= score u1) (<= score u5)) (err u100))
-    (asserts! (is-some (map-get? skills { skill-id: skill-id })) (err u101))
-    (asserts! (is-some (get-worker-profile worker)) (err u102))
-   
+    (asserts! (and (>= score u1) (<= score u5)) err-invalid-skill-score)
+    (asserts! (is-some (map-get? skills { skill-id: skill-id })) err-skill-not-found)
+    (asserts! (is-some (get-worker-profile worker)) err-not-found)
     (var-set skill-review-counter review-id)
     (ok (map-set skill-reviews
       { review-id: review-id }
@@ -367,4 +367,144 @@
 
 (define-read-only (get-top-workers-by-skill (skill-id uint))
   (ok (list))
+)
+
+(define-constant err-badge-not-found (err u400))
+(define-constant err-badge-already-earned (err u401))
+
+(define-data-var badge-counter uint u0)
+
+(define-map badge-definitions
+  { badge-id: uint }
+  {
+    name: (string-ascii 50),
+    description: (string-ascii 100),
+    badge-type: (string-ascii 20),
+    requirement-value: uint,
+    active: bool
+  }
+)
+
+(define-map worker-badges
+  { worker: principal, badge-id: uint }
+  {
+    earned-at: uint,
+    current-value: uint
+  }
+)
+
+(define-public (create-badge (name (string-ascii 50)) (description (string-ascii 100)) (badge-type (string-ascii 20)) (requirement-value uint))
+  (let ((badge-id (+ (var-get badge-counter) u1)))
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (var-set badge-counter badge-id)
+    (ok (map-set badge-definitions
+      { badge-id: badge-id }
+      {
+        name: name,
+        description: description,
+        badge-type: badge-type,
+        requirement-value: requirement-value,
+        active: true
+      }
+    ))
+  )
+)
+
+(define-public (check-and-award-badges (worker principal))
+  (let 
+    (
+      (profile (unwrap! (get-worker-profile worker) err-not-found))
+      (review-count (get review-count profile))
+      (average-rating (get average-rating profile))
+    )
+    (begin
+      (try! (check-review-milestone-badges worker review-count))
+      (try! (check-rating-milestone-badges worker average-rating))
+      (ok true)
+    )
+  )
+)
+
+(define-private (check-review-milestone-badges (worker principal) (review-count uint))
+  (begin
+    (if (and (>= review-count u10) (is-none (get-worker-badge worker u1)))
+      (begin (try! (award-badge worker u1 review-count)) true)
+      false
+    )
+    (if (and (>= review-count u50) (is-none (get-worker-badge worker u2)))
+      (begin (try! (award-badge worker u2 review-count)) true)
+      false
+    )
+    (if (and (>= review-count u100) (is-none (get-worker-badge worker u3)))
+      (begin (try! (award-badge worker u3 review-count)) true)
+      false
+    )
+    (ok true)
+  )
+)
+
+(define-private (check-rating-milestone-badges (worker principal) (average-rating uint))
+  (begin
+    (if (and (>= average-rating u45) (is-none (get-worker-badge worker u4)))
+      (begin (try! (award-badge worker u4 average-rating)) true)
+      false
+    )
+    (if (and (is-eq average-rating u50) (is-none (get-worker-badge worker u5)))
+      (begin (try! (award-badge worker u5 average-rating)) true)
+      false
+    )
+    (ok true)
+  )
+)
+
+(define-private (award-badge (worker principal) (badge-id uint) (current-value uint))
+  (let ((badge-def (unwrap! (get-badge-definition badge-id) err-badge-not-found)))
+    (asserts! (get active badge-def) err-badge-not-found)
+    (ok (map-set worker-badges
+      { worker: worker, badge-id: badge-id }
+      {
+        earned-at: burn-block-height,
+        current-value: current-value
+      }
+    ))
+  )
+)
+
+(define-public (initialize-default-badges)
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (try! (create-badge "Rising Star" "Complete 10 gigs" "milestone" u10))
+    (try! (create-badge "Veteran" "Complete 50 gigs" "milestone" u50))
+    (try! (create-badge "Elite" "Complete 100 gigs" "milestone" u100))
+    (try! (create-badge "Top Rated" "Maintain 4.5+ average rating" "rating" u45))
+    (try! (create-badge "Perfect Score" "Achieve 5.0 average rating" "rating" u50))
+    (ok true)
+  )
+)
+
+(define-read-only (get-badge-definition (badge-id uint))
+  (map-get? badge-definitions { badge-id: badge-id })
+)
+
+(define-read-only (get-worker-badge (worker principal) (badge-id uint))
+  (map-get? worker-badges { worker: worker, badge-id: badge-id })
+)
+
+(define-read-only (get-worker-badge-count (worker principal))
+  (let
+    (
+      (badge-1 (get-worker-badge worker u1))
+      (badge-2 (get-worker-badge worker u2))
+      (badge-3 (get-worker-badge worker u3))
+      (badge-4 (get-worker-badge worker u4))
+      (badge-5 (get-worker-badge worker u5))
+    )
+    (+ 
+      (if (is-some badge-1) u1 u0)
+      (if (is-some badge-2) u1 u0)
+      (if (is-some badge-3) u1 u0)
+      (if (is-some badge-4) u1 u0)
+      (if (is-some badge-5) u1 u0)
+    )
+  )
 )
