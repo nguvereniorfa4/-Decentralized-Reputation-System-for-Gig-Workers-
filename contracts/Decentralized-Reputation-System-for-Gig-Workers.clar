@@ -508,3 +508,155 @@
     )
   )
 )
+
+(define-constant err-client-not-found (err u500))
+(define-constant err-client-already-exists (err u501))
+(define-constant err-no-gig-history (err u502))
+(define-constant err-already-rated-client (err u503))
+
+(define-data-var client-review-counter uint u0)
+
+(define-map client-profiles
+  { client: principal }
+  {
+    total-score: uint,
+    review-count: uint,
+    average-rating: uint,
+    gigs-posted: uint
+  }
+)
+
+(define-map client-reviews
+  { review-id: uint }
+  {
+    client: principal,
+    worker: principal,
+    gig-id: uint,
+    score: uint,
+    communication-score: uint,
+    payment-timeliness: uint,
+    professionalism: uint,
+    timestamp: uint,
+    feedback: (string-ascii 256)
+  }
+)
+
+(define-map gig-client-ratings
+  { worker: principal, gig-id: uint }
+  { rated: bool }
+)
+
+(define-public (register-client)
+  (let ((client tx-sender))
+    (if (is-some (get-client-profile client))
+      err-client-already-exists
+      (ok (map-set client-profiles
+        { client: client }
+        {
+          total-score: u0,
+          review-count: u0,
+          average-rating: u0,
+          gigs-posted: u0
+        }
+      ))
+    )
+  )
+)
+
+(define-public (rate-client (client principal) (gig-id uint) (score uint) (communication-score uint) (payment-timeliness uint) (professionalism uint) (feedback (string-ascii 256)))
+  (let 
+    (
+      (review-id (+ (var-get client-review-counter) u1))
+      (worker tx-sender)
+      (gig-review (unwrap! (get-review gig-id) err-not-found))
+    )
+    (asserts! (and (>= score u1) (<= score u5)) err-invalid-score)
+    (asserts! (and (>= communication-score u1) (<= communication-score u5)) err-invalid-score)
+    (asserts! (and (>= payment-timeliness u1) (<= payment-timeliness u5)) err-invalid-score)
+    (asserts! (and (>= professionalism u1) (<= professionalism u5)) err-invalid-score)
+    (asserts! (is-eq worker (get worker gig-review)) err-unauthorized)
+    (asserts! (is-eq client (get client gig-review)) err-unauthorized)
+    (asserts! (is-none (map-get? gig-client-ratings { worker: worker, gig-id: gig-id })) err-already-rated-client)
+    (unwrap-panic (update-client-stats client score))
+    (var-set client-review-counter review-id)
+    (map-set gig-client-ratings
+      { worker: worker, gig-id: gig-id }
+      { rated: true }
+    )
+    (ok (map-set client-reviews
+      { review-id: review-id }
+      {
+        client: client,
+        worker: worker,
+        gig-id: gig-id,
+        score: score,
+        communication-score: communication-score,
+        payment-timeliness: payment-timeliness,
+        professionalism: professionalism,
+        timestamp: burn-block-height,
+        feedback: feedback
+      }
+    ))
+  )
+)
+
+(define-private (update-client-stats (client principal) (new-score uint))
+  (let
+    (
+      (profile (default-to 
+        { total-score: u0, review-count: u0, average-rating: u0, gigs-posted: u0 }
+        (get-client-profile client)
+      ))
+      (new-count (+ (get review-count profile) u1))
+      (new-total (+ (get total-score profile) new-score))
+      (new-average (/ new-total new-count))
+    )
+    (ok (map-set client-profiles
+      { client: client }
+      {
+        total-score: new-total,
+        review-count: new-count,
+        average-rating: new-average,
+        gigs-posted: (get gigs-posted profile)
+      }
+    ))
+  )
+)
+
+(define-public (increment-client-gigs (client principal))
+  (let 
+    (
+      (profile (default-to 
+        { total-score: u0, review-count: u0, average-rating: u0, gigs-posted: u0 }
+        (get-client-profile client)
+      ))
+    )
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (ok (map-set client-profiles
+      { client: client }
+      (merge profile { gigs-posted: (+ (get gigs-posted profile) u1) })
+    ))
+  )
+)
+
+(define-read-only (get-client-profile (client principal))
+  (map-get? client-profiles { client: client })
+)
+
+(define-read-only (get-client-review (review-id uint))
+  (map-get? client-reviews { review-id: review-id })
+)
+
+(define-read-only (get-client-reputation (client principal))
+  (let ((profile (unwrap! (get-client-profile client) err-client-not-found)))
+    (ok {
+      average-rating: (get average-rating profile),
+      review-count: (get review-count profile),
+      gigs-posted: (get gigs-posted profile)
+    })
+  )
+)
+
+(define-read-only (has-rated-client (worker principal) (gig-id uint))
+  (is-some (map-get? gig-client-ratings { worker: worker, gig-id: gig-id }))
+)
