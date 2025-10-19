@@ -119,9 +119,12 @@
     
     ;; Update worker profile
     (match (map-get? worker-profiles { worker: tx-sender })
-      profile (map-set worker-profiles
-        { worker: tx-sender }
-        (merge profile { stake-amount: (+ (get stake-amount profile) amount) })
+      profile (begin
+        (map-set worker-profiles
+          { worker: tx-sender }
+          (merge profile { stake-amount: (+ (get stake-amount profile) amount) })
+        )
+        (ok true)
       )
       ERR_WORKER_NOT_FOUND
     )

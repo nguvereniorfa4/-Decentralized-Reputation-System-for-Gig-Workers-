@@ -95,7 +95,7 @@
 
 (define-private (calculate-growth-rate (current uint) (previous uint))
   (if (> previous u0)
-    (/ (* (- current previous) u100) previous)
+    (to-int (/ (* (- current previous) u100) previous))
     0
   )
 )
