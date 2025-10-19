@@ -1,0 +1,14 @@
+[project]
+name = "decentralized-reputation-system"
+description = "A decentralized reputation system for gig workers"
+authors = ["nguvereniorfa4 <nguvereniorfa4@gmail.com>"]
+
+[contracts.reputation-core]
+path = "contracts/reputation-core.clar"
+
+[contracts.reputation-analytics]
+path = "contracts/reputation-analytics.clar"
+
+[networks]
+testnet = "https://stacks-node-api.testnet.stacks.co"
+mainnet = "https://stacks-node-api.mainnet.stacks.co"
