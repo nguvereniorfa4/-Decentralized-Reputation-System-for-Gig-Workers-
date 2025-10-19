@@ -1,0 +1,27 @@
+[network]
+name = "devnet"
+stacks_node_rpc_address = "http://localhost:20443"
+stacks_node_p2p_address = "http://localhost:20444"
+bitcoin_node_rpc_address = "http://localhost:18443"
+bitcoin_node_rpc_username = "devnet"
+bitcoin_node_rpc_password = "devnet"
+
+[accounts.deployer]
+mnemonic = "twice kind fence tip hidden tilt action fragile skin nothing glory cousin green tomorrow spring wrist shed math olympic multiply hip blue scout claw"
+balance = 100_000_000_000_000
+
+[accounts.wallet_1]
+mnemonic = "sell invite acquire kitten bamboo drastic junk trunk snap boss prepare wedding cotton season remove heavy amateur gym soft truck submit cram lake million"
+balance = 100_000_000_000_000
+
+[accounts.wallet_2]
+mnemonic = "hold excess usual excess ring elephant install account glad dry fragile donkey gaze humble truck breeze nation gasp vacuum limb head keep delay hospital"
+balance = 100_000_000_000_000
+
+[accounts.wallet_3]
+mnemonic = "cycle puppy glare enroll cost improve round trend wrist mushroom scorpion tower claim oppose clever elephant dinosaur eight problem before frozen dune wagon high"
+balance = 100_000_000_000_000
+
+[accounts.wallet_4]
+mnemonic = "board list obtain sugar hour worth ramp vehicle global make civil true iron cheek particle hope fuel alone jacket grace luxury brave story cost"
+balance = 100_000_000_000_000

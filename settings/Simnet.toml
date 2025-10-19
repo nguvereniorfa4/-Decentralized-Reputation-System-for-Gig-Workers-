@@ -1,0 +1,19 @@
+[network]
+name = "simnet"
+stacks_node_rpc_address = "http://localhost:20443"
+stacks_node_p2p_address = "http://localhost:20444"
+bitcoin_node_rpc_address = "http://localhost:18443"
+bitcoin_node_rpc_username = "devnet"
+bitcoin_node_rpc_password = "devnet"
+
+[accounts.deployer]
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+balance = 100_000_000_000_000
+
+[accounts.wallet_1]
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon above"
+balance = 100_000_000_000_000
+
+[accounts.wallet_2]
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon absent"
+balance = 100_000_000_000_000
