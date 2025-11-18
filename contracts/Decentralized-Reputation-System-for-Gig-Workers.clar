@@ -660,3 +660,154 @@
 (define-read-only (has-rated-client (worker principal) (gig-id uint))
   (is-some (map-get? gig-client-ratings { worker: worker, gig-id: gig-id }))
 )
+
+(define-constant err-tier-not-found (err u600))
+(define-constant err-invalid-tier-requirement (err u601))
+(define-constant err-streak-threshold-not-met (err u602))
+
+(define-data-var tier-counter uint u0)
+
+(define-map tier-definitions
+  { tier-id: uint }
+  {
+    name: (string-ascii 30),
+    min-reviews: uint,
+    min-rating: uint,
+    min-streak: uint,
+    reward-percentage: uint
+  }
+)
+
+(define-map worker-tiers
+  { worker: principal }
+  {
+    current-tier-id: uint,
+    promoted-at: uint,
+    consecutive-high-reviews: uint
+  }
+)
+
+(define-map tier-history
+  { worker: principal, promotion-id: uint }
+  {
+    tier-id: uint,
+    promoted-at: uint,
+    review-count-at-promotion: uint,
+    average-rating-at-promotion: uint
+  }
+)
+
+(define-data-var tier-history-counter uint u0)
+
+(define-public (create-tier (name (string-ascii 30)) (min-reviews uint) (min-rating uint) (min-streak uint) (reward-percentage uint))
+  (let ((tier-id (+ (var-get tier-counter) u1)))
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (var-set tier-counter tier-id)
+    (ok (map-set tier-definitions
+      { tier-id: tier-id }
+      {
+        name: name,
+        min-reviews: min-reviews,
+        min-rating: min-rating,
+        min-streak: min-streak,
+        reward-percentage: reward-percentage
+      }
+    ))
+  )
+)
+
+(define-public (initialize-default-tiers)
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (try! (create-tier "Bronze" u5 u35 u3 u5))
+    (try! (create-tier "Silver" u15 u40 u5 u10))
+    (try! (create-tier "Gold" u30 u45 u8 u15))
+    (try! (create-tier "Platinum" u50 u48 u10 u20))
+    (ok true)
+  )
+)
+
+(define-public (promote-worker-tier (worker principal))
+  (let
+    (
+      (worker-profile (unwrap! (get-worker-profile worker) err-not-found))
+      (review-count (get review-count worker-profile))
+      (average-rating (get average-rating worker-profile))
+      (current-tier-data (default-to 
+        { current-tier-id: u0, promoted-at: u0, consecutive-high-reviews: u0 }
+        (map-get? worker-tiers { worker: worker })
+      ))
+      (next-tier-id (+ (get current-tier-id current-tier-data) u1))
+      (next-tier (unwrap! (map-get? tier-definitions { tier-id: next-tier-id }) err-tier-not-found))
+      (promotion-id (+ (var-get tier-history-counter) u1))
+    )
+    (asserts! (>= review-count (get min-reviews next-tier)) err-unauthorized)
+    (asserts! (>= average-rating (get min-rating next-tier)) err-invalid-tier-requirement)
+    (asserts! (>= (get consecutive-high-reviews current-tier-data) (get min-streak next-tier)) err-streak-threshold-not-met)
+    (var-set tier-history-counter promotion-id)
+    (map-set tier-history
+      { worker: worker, promotion-id: promotion-id }
+      {
+        tier-id: next-tier-id,
+        promoted-at: burn-block-height,
+        review-count-at-promotion: review-count,
+        average-rating-at-promotion: average-rating
+      }
+    )
+    (ok (map-set worker-tiers
+      { worker: worker }
+      {
+        current-tier-id: next-tier-id,
+        promoted-at: burn-block-height,
+        consecutive-high-reviews: u0
+      }
+    ))
+  )
+)
+
+(define-public (update-streak-on-review (worker principal) (score uint))
+  (let
+    (
+      (current-tier-data (default-to 
+        { current-tier-id: u0, promoted-at: u0, consecutive-high-reviews: u0 }
+        (map-get? worker-tiers { worker: worker })
+      ))
+      (new-streak (if (>= score u4) (+ (get consecutive-high-reviews current-tier-data) u1) u0))
+    )
+    (ok (map-set worker-tiers
+      { worker: worker }
+      {
+        current-tier-id: (get current-tier-id current-tier-data),
+        promoted-at: (get promoted-at current-tier-data),
+        consecutive-high-reviews: new-streak
+      }
+    ))
+  )
+)
+
+(define-read-only (get-worker-tier (worker principal))
+  (map-get? worker-tiers { worker: worker })
+)
+
+(define-read-only (get-tier-definition (tier-id uint))
+  (map-get? tier-definitions { tier-id: tier-id })
+)
+
+(define-read-only (get-tier-history (worker principal) (promotion-id uint))
+  (map-get? tier-history { worker: worker, promotion-id: promotion-id })
+)
+
+(define-read-only (get-worker-current-tier-name (worker principal))
+  (let
+    (
+      (tier-data (map-get? worker-tiers { worker: worker }))
+      (tier-id (if (is-some tier-data) (get current-tier-id (unwrap-panic tier-data)) u0))
+    )
+    (if (> tier-id u0)
+      (let ((tier-def (map-get? tier-definitions { tier-id: tier-id })))
+        (ok (if (is-some tier-def) (get name (unwrap-panic tier-def)) "Unranked"))
+      )
+      (ok "Unranked")
+    )
+  )
+)
